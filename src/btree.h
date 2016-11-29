@@ -157,6 +157,11 @@ struct NonLeafNodeInt{
    * Stores page numbers of child pages which themselves are other non-leaf/leaf nodes in the tree.
    */
 	PageId pageNoArray[ INTARRAYNONLEAFSIZE + 1 ];
+
+	NonLeafNodeInt() {
+		memset((void *) keyArray, INT32_MAX, INTARRAYNONLEAFSIZE);
+		memset((void *) pageNoArray, INT32_MAX, INTARRAYNONLEAFSIZE + 1);
+	}
 };
 
 
@@ -179,6 +184,13 @@ struct LeafNodeInt{
 	 * This linking of leaves allows to easily move from one leaf to the next leaf during index scan.
    */
 	PageId rightSibPageNo;
+
+	LeafNodeInt() {
+		memset((void*) keyArray, INT32_MAX, INTARRAYLEAFSIZE);
+		memset((void *) idArray, INT32_MAX, INTARRAYLEAFSIZE);
+		node.rightSibPageNo = INT32_MAX;
+		rightSibPageNo = -1;
+	}
 };
 
 
@@ -203,10 +215,19 @@ class BTreeIndex {
 	/*
  	*
  	*/
-	void populateNewNonLeafPage(PageId);
+	void allocatePageAndUpdateMap(PageId&,int);
+	bool isRootPageEmpty(NonLeafNodeInt*);
+	void insertEntryInRoot(NonLeafNodeInt*, int, const RecordId);
 
-	void populateNewLeafPage(PageId);
-  /**
+	template<typename T> void writeNodetoPage(T* , PageId );
+
+	template<typename T> bool isNodeFull(T* , int );
+
+	void copyAndSet(LeafNodeInt*, LeafNodeInt*, int,int);
+	void copyAndSet(NonLeafNodeInt*, NonLeafNodeInt*, int,int);
+	int splitLeafNodeInTwo(LeafNodeInt* newLeafNode, LeafNodeInt* currentNode, RecordId r, int k);
+	int splitNonLeafNode(NonLeafNodeInt* newNonLeafNode, NonLeafNodeInt* currentNode, int key, PageId pageId);
+	/**
    * File object for the index file.
    */
 	File		*file;
@@ -309,9 +330,13 @@ class BTreeIndex {
    */
 	Operator	highOp;
 
-	
  public:
 
+	//1 for nonleaf, 0 for leaf
+	//key = pageId
+	std::map<int, int> pagetypemap;
+
+	pair<int,PageId > findpageandinsert(PageId currPage, const void *key, const RecordId rid);
   /**
    * BTreeIndex Constructor. 
 	 * Check to see if the corresponding index file exists. If so, open the file.
