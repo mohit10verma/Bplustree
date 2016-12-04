@@ -137,8 +137,8 @@ int main(int argc, char **argv)
 	File::remove(relationName);
 
 	test1();
-//	test2();
-//	test3();
+	test2();
+	test3();
 	//errorTests();
 
   return 1;

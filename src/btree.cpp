@@ -17,6 +17,7 @@
 #include "exceptions/index_scan_completed_exception.h"
 #include "exceptions/file_not_found_exception.h"
 #include "exceptions/end_of_file_exception.h"
+#include "exceptions/file_exists_exception.h"
 
 
 //#define DEBUG
@@ -34,14 +35,8 @@ namespace badgerdb {
                            const Datatype attrType) {
         this->bufMgr = bufMgrIn;
         outIndexName = relationName + "." + std::to_string(attrByteOffset);
-        if (File::exists(outIndexName)) {
-            static BlobFile indexfile = BlobFile::open(outIndexName);
-            this->file = &indexfile;//TODO: remove this
-        }
-        else {
-            static BlobFile indexfile = BlobFile::create(outIndexName);
-            this->file = &indexfile;//TODO: remove this
-
+        try {
+            this->file = new BlobFile(outIndexName, true);
             this->file->allocatePage(this->headerPageNum);
             this->allocatePageAndUpdateMap(this->rootPageNum, 1);
             NonLeafNodeInt rootNode;
@@ -63,6 +58,9 @@ namespace badgerdb {
             //TODO: initialize members specific to scanning
             //Construct Btree for this relation
             constructBtree(relationName);
+        } catch (FileExistsException e)
+        {
+            this->file = new BlobFile(outIndexName, false);
         }
     }
 
@@ -93,9 +91,6 @@ namespace badgerdb {
             while (page_it != (*file_it).end()) {
                 RecordId currRecordId = page_it.getCurrentRecord();
                 int keyValue = this->getKeyValue(file_it, page_it);
-                if (keyValue==1000) {
-                    cout<<"herehere\n";
-                }
                 this->insertEntry((void *) &keyValue, currRecordId);
                 page_it++;
             }
@@ -110,7 +105,7 @@ namespace badgerdb {
 
     BTreeIndex::~BTreeIndex() {
         //this->bufMgr->flushFile(this->file);
-        //delete this->file;
+        delete this->file;
     }
 
 // -----------------------------------------------------------------------------

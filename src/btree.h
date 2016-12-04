@@ -239,6 +239,8 @@ class BTreeIndex {
    */
 	File		*file;
 
+
+
   /**
    * Buffer Manager Instance.
    */
@@ -343,7 +345,7 @@ class BTreeIndex {
 	//key = pageId
 	std::map<PageId, int> pageTypeMap;
 
-	
+
 
 	std::pair<int,PageId > findPageAndInsert(PageId currPage, const void *key, const RecordId rid);
   /**
