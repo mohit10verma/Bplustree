@@ -129,9 +129,6 @@ void File::writeHeader(const FileHeader& header) {
 }
 
 
-
-
-
 PageFile PageFile::create(const std::string& filename) {
   return PageFile(filename, true /* create_new */);
 }
@@ -345,6 +342,7 @@ BlobFile::BlobFile(const std::string& name, const bool create_new)
 }
 
 BlobFile::~BlobFile() {
+
 }
 
 BlobFile::BlobFile(const BlobFile& other)

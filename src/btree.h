@@ -11,7 +11,7 @@
 #include <string>
 #include "string.h"
 #include <sstream>
-
+#include <utility>
 #include "types.h"
 #include "page.h"
 #include "file.h"
@@ -48,14 +48,14 @@ enum Operator
  * @brief Number of key slots in B+Tree leaf for INTEGER key.
  */
 //                                                  sibling ptr             key               rid
-const  int INTARRAYLEAFSIZE = ( Page::SIZE - sizeof( PageId ) ) / ( sizeof( int ) + sizeof( RecordId ) );
-
+//const  int INTARRAYLEAFSIZE = ( Page::SIZE - sizeof( PageId ) ) / ( sizeof( int ) + sizeof( RecordId ) );
+	const  int INTARRAYLEAFSIZE = 3;
 /**
  * @brief Number of key slots in B+Tree non-leaf for INTEGER key.
  */
 //                                                     level     extra pageNo                  key       pageNo
-const  int INTARRAYNONLEAFSIZE = ( Page::SIZE - sizeof( int ) - sizeof( PageId ) ) / ( sizeof( int ) + sizeof( PageId ) );
-
+//const  int INTARRAYNONLEAFSIZE = ( Page::SIZE - sizeof( int ) - sizeof( PageId ) ) / ( sizeof( int ) + sizeof( PageId ) );
+	const  int INTARRAYNONLEAFSIZE = 4;
 /**
  * @brief Structure to store a key-rid pair. It is used to pass the pair to functions that 
  * add to or make changes to the leaf node pages of the tree. Is templated for the key member.
@@ -159,9 +159,13 @@ struct NonLeafNodeInt{
 	PageId pageNoArray[ INTARRAYNONLEAFSIZE + 1 ];
 
 	NonLeafNodeInt() {
-		memset((void *) keyArray, INT32_MAX, INTARRAYNONLEAFSIZE);
-		memset((void *) pageNoArray, INT32_MAX, INTARRAYNONLEAFSIZE + 1);
+		for (int i = 0; i<INTARRAYNONLEAFSIZE;i++) {
+			keyArray[i] = INT32_MAX;
+			pageNoArray[i] = UINT32_MAX;
+		}
+		pageNoArray[INTARRAYNONLEAFSIZE] = UINT32_MAX;
 	}
+
 };
 
 
@@ -186,9 +190,12 @@ struct LeafNodeInt{
 	PageId rightSibPageNo;
 
 	LeafNodeInt() {
-		memset((void*) keyArray, INT32_MAX, INTARRAYLEAFSIZE);
-		memset((void *) idArray, INT32_MAX, INTARRAYLEAFSIZE);
-		node.rightSibPageNo = INT32_MAX;
+		for (int i = 0; i<INTARRAYLEAFSIZE;i++) {
+			keyArray[i] = INT32_MAX;
+			ridArray[i].page_number = UINT32_MAX;
+			ridArray[i].slot_number = UINT16_MAX;
+		}
+		rightSibPageNo = INT32_MAX;
 		rightSibPageNo = -1;
 	}
 };
@@ -219,7 +226,7 @@ class BTreeIndex {
 	bool isRootPageEmpty(NonLeafNodeInt*);
 	void insertEntryInRoot(NonLeafNodeInt*, int, const RecordId);
 
-	template<typename T> void writeNodetoPage(T* , PageId );
+	template<typename T> void writeNodeToPage(T *, PageId);
 
 	template<typename T> bool isNodeFull(T* , int );
 
@@ -334,9 +341,11 @@ class BTreeIndex {
 
 	//1 for nonleaf, 0 for leaf
 	//key = pageId
-	std::map<int, int> pagetypemap;
+	std::map<PageId, int> pageTypeMap;
 
-	pair<int,PageId > findpageandinsert(PageId currPage, const void *key, const RecordId rid);
+	
+
+	std::pair<int,PageId > findPageAndInsert(PageId currPage, const void *key, const RecordId rid);
   /**
    * BTreeIndex Constructor. 
 	 * Check to see if the corresponding index file exists. If so, open the file.
