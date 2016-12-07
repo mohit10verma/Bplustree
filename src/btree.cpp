@@ -38,9 +38,6 @@ namespace badgerdb {
         try {
             this->file = new BlobFile(outIndexName, true);
             this->file->allocatePage(this->headerPageNum);
-            this->allocatePageAndUpdateMap(this->rootPageNum, 1);
-            NonLeafNodeInt rootNode;
-            this->writeNodeToPage(&rootNode, this->rootPageNum);
             //populate metadata of index header page
             IndexMetaInfo metainfo;
             strcpy(metainfo.relationName, relationName.c_str());
@@ -51,6 +48,10 @@ namespace badgerdb {
             //Write metadata of index header page
             this->writeNodeToPage(&metainfo, this->headerPageNum);
 
+            this->allocatePageAndUpdateMap(this->rootPageNum, 1);
+            NonLeafNodeInt rootNode;
+            this->writeNodeToPage(&rootNode, this->rootPageNum);
+
             this->attributeType = attrType;
             this->attrByteOffset = attrByteOffset;
             this->leafOccupancy = 0;
@@ -58,12 +59,203 @@ namespace badgerdb {
             //TODO: initialize members specific to scanning
             //Construct Btree for this relation
             constructBtree(relationName);
+
         } catch (FileExistsException e)
         {
             this->file = new BlobFile(outIndexName, false);
+            Page headerPage = this->file->readPage(1);//TODO: assumed header page id id 1
+            IndexMetaInfo* metaInfo = (IndexMetaInfo*) (&headerPage);
+
+            this->rootPageNum = metaInfo->rootPageNo;
+            this->attributeType = metaInfo->attrType;
+            this->attrByteOffset = metaInfo->attrByteOffset;
         }
     }
 
+
+
+
+// -----------------------------------------------------------------------------
+// BTreeIndex::~BTreeIndex -- destructor
+// -----------------------------------------------------------------------------
+
+    BTreeIndex::~BTreeIndex() {
+        //this->bufMgr->flushFile(this->file);
+        delete this->file;
+    }
+
+// -----------------------------------------------------------------------------
+// BTreeIndex::insertEntry
+// -----------------------------------------------------------------------------
+
+
+    const void BTreeIndex::insertEntry(const void *key, const RecordId rid) {
+        //If root gets splitup, create new root, and update metapage.
+        pair<int, PageId> p = this->findPageAndInsert(this->rootPageNum, key, rid);
+        if (p.first == -1 && p.second == UINT32_MAX) {
+            //do nothing
+        }
+        else {
+            PageId newPageId;
+            this->allocatePageAndUpdateMap(newPageId, 1);
+            NonLeafNodeInt newRootNode;
+            newRootNode.keyArray[0] = p.first;
+            newRootNode.pageNoArray[0] = this->rootPageNum;
+            newRootNode.pageNoArray[1] = p.second;
+            this->rootPageNum = newPageId;
+            this->writeNodeToPage(&newRootNode, this->rootPageNum);
+            Page currPage = this->file->readPage(this->headerPageNum);
+            IndexMetaInfo *metaInfo = (IndexMetaInfo*) (&currPage);
+            metaInfo->rootPageNo = this->rootPageNum;
+            this->writeNodeToPage(&metaInfo, this->headerPageNum);
+        }
+        return;
+    }
+
+    void BTreeIndex::printBtree(PageId pageNo) {
+        if (this->pageTypeMap[pageNo] == 1) {
+            //TODO: NonLeaf Node search
+            Page nonLeafPage = this->file->readPage(pageNo);
+            NonLeafNodeInt* nonLeafNodeData = (NonLeafNodeInt*) &nonLeafPage;
+            int i=0;
+            //TODO: Binary Search
+            while (this->lowValInt > nonLeafNodeData->keyArray[i] && i<INTARRAYNONLEAFSIZE) {
+                i++;
+            }
+            //Recursive search on the child Node
+            return;
+        }
+        else {
+            //TODO: reached the Leaf Node return the pageId
+            return ;
+        }
+    }
+
+
+    PageId BTreeIndex::searchBtree(PageId pageNo) {
+        if (this->pageTypeMap[pageNo] == 1) {
+            //TODO: NonLeaf Node search
+            Page nonLeafPage = this->file->readPage(pageNo);
+            NonLeafNodeInt* nonLeafNodeData = (NonLeafNodeInt*) &nonLeafPage;
+            int i=0;
+            //TODO: Binary Search
+            while (this->lowValInt > nonLeafNodeData->keyArray[i] && i<INTARRAYNONLEAFSIZE) {
+                i++;
+            }
+            //Recursive search on the child Node
+            return this->searchBtree(nonLeafNodeData->pageNoArray[i]);
+        }
+        else {
+            //TODO: reached the Leaf Node return the pageId
+            return pageNo;
+        }
+    }
+// -----------------------------------------------------------------------------
+// BTreeIndex::startScan
+// -----------------------------------------------------------------------------
+
+    const void BTreeIndex::startScan(const void *lowValParm,
+                                     const Operator lowOpParm,
+                                     const void *highValParm,
+                                     const Operator highOpParm) {
+
+        this->lowValInt = *(int*)(lowValParm);
+        this->highValInt = *(int*)(highValParm);
+
+        if (this->lowValInt > this->highValInt) {
+            throw BadScanrangeException();
+        }
+
+        this->scanExecuting = true;
+        this->lowOp = lowOpParm;
+        this->highOp = highOpParm;
+        //Start search on rootPage
+        PageId foundLeafPage = searchBtree(this->rootPageNum);
+
+        this->currentPageNum = foundLeafPage;
+        this->currentPageData = new Page();
+        *this->currentPageData = this->file->readPage(this->currentPageNum);
+        LeafNodeInt* currentLeaf = (LeafNodeInt*) (this->currentPageData);
+        int i = 0;
+        switch (lowOpParm) {
+            case GT:
+                while (this->lowValInt >= currentLeaf->keyArray[i] && i < INTARRAYLEAFSIZE) {
+                    i++;
+                }
+                break;
+            case GTE:
+                while (this->lowValInt > currentLeaf->keyArray[i] && i < INTARRAYLEAFSIZE) {
+                    i++;
+                }
+            break;
+            default:
+                assert(0);
+        }
+        this->nextEntry = i;
+        if (i == INTARRAYLEAFSIZE) {
+            assert(0); //ASSERT here, not possible, must have the key,rid pair here
+        }
+        return;
+    }
+
+// -----------------------------------------------------------------------------
+// BTreeIndex::scanNext
+// -----------------------------------------------------------------------------
+
+    const void BTreeIndex::scanNext(RecordId &outRid) {
+        //Already know the leafPageId and data
+        LeafNodeInt* currentLeaf;
+        currentLeaf = (LeafNodeInt*) (this->currentPageData);
+
+        if (this->nextEntry == INTARRAYLEAFSIZE) {
+            if (currentLeaf->rightSibPageNo != -1) {
+                this->currentPageNum = currentLeaf->rightSibPageNo;
+                *this->currentPageData = this->file->readPage(this->currentPageNum);
+                currentLeaf = (LeafNodeInt*) (this->currentPageData);
+                this->nextEntry = 0;
+            }
+            else {
+                throw IndexScanCompletedException();
+            }
+        }
+
+        //this->nextEntry must be valid here
+
+        switch (this->highOp) {
+            case LTE:
+                if (currentLeaf->keyArray[this->nextEntry] <= this->highValInt) {
+                    outRid = currentLeaf->ridArray[this->nextEntry];
+                    this->nextEntry++;
+                }
+                else {
+                    throw IndexScanCompletedException();
+                }
+            break;
+            case LT:
+                if (currentLeaf->keyArray[this->nextEntry] < this->highValInt) {
+                    outRid = currentLeaf->ridArray[this->nextEntry];
+                    this->nextEntry++;
+                }
+                else {
+                    throw IndexScanCompletedException();
+                }
+            break;
+            default:
+                assert(0);
+        }
+    }
+
+// -----------------------------------------------------------------------------
+// BTreeIndex::endScan
+// -----------------------------------------------------------------------------
+//
+    const void BTreeIndex::endScan() {
+        if (!this->scanExecuting) {
+            throw ScanNotInitializedException();
+        }
+        this->scanExecuting = false;
+        delete this->currentPageData;
+    }
 
     void BTreeIndex::allocatePageAndUpdateMap(PageId& page_number, int isNonLeaf) {
         this->file->allocatePage(page_number);
@@ -98,19 +290,6 @@ namespace badgerdb {
         }
         //Destructor of Pagefile closes the file. No explicit close
     }
-
-// -----------------------------------------------------------------------------
-// BTreeIndex::~BTreeIndex -- destructor
-// -----------------------------------------------------------------------------
-
-    BTreeIndex::~BTreeIndex() {
-        //this->bufMgr->flushFile(this->file);
-        delete this->file;
-    }
-
-// -----------------------------------------------------------------------------
-// BTreeIndex::insertEntry
-// -----------------------------------------------------------------------------
 
     template <typename T>
     void shiftAndInsert(int *keyArray, T *TArray, int &currKey, const T &Tvalue, int keyArray_size, int array_size2) {
@@ -168,6 +347,7 @@ namespace badgerdb {
 
     void BTreeIndex::insertEntryInRoot(NonLeafNodeInt *rootNode, int currKey, const RecordId rid) {
         //Alocate child node and populate default contents
+        rootNode->keyArray[0] = currKey;
         this->file->allocatePage(rootNode->pageNoArray[1]);
 
         LeafNodeInt newLeafNode;
@@ -176,7 +356,7 @@ namespace badgerdb {
 
         writeNodeToPage(&newLeafNode, rootNode->pageNoArray[1]);
         //this->bufMgr->
-        rootNode->keyArray[0] = currKey;
+
         writeNodeToPage(rootNode, this->rootPageNum);
         return;
     }
@@ -316,26 +496,60 @@ namespace badgerdb {
                     return pair<int, PageId>(-1, UINT32_MAX);
                 }
             }
-            // Find the child node index and navigate to the child through recurssion
+            // Find the child node index and navigate to the child through recursion
             int i = 0;
             while (currentNode->keyArray[i] < currentKey && i<INTARRAYNONLEAFSIZE) {
                 i++;
             }
             // i is the pagenumber where it should go!
             // Note: i = INTARRAYNONLEAFSIZE in worst case, and it is okay to access pageNoArray[INTARRAYNONLEAFSIZE]
+            if (currentNode->pageNoArray[i] == UINT32_MAX) {
+                //Child page doesn't exist, create it
+                this->allocatePageAndUpdateMap(currentNode->pageNoArray[i], 0);//Create leaf page
+                int counter = i;
+                int rightpageID = currentNode->pageNoArray[i];
+                if( counter != 0) {
+                    counter--;
+                    if(currentNode->pageNoArray[counter] ==UINT32_MAX){
+                        counter--;
+                        if(counter >=0 ) {
+                            assert(currentNode->pageNoArray[counter] !=UINT32_MAX);//left child can never be non-allocated
+                            Page leftchildPage = this->file->readPage(currentNode->pageNoArray[counter]);
+                            LeafNodeInt *leftchild = (LeafNodeInt *) &leftchildPage;
+                            //Swapping siblingPageIDs
+                            PageId currentRightSibling = leftchild->rightSibPageNo;
+                            leftchild->rightSibPageNo = rightpageID;
+                            writeNodeToPage(leftchild, currentNode->pageNoArray[counter]);
+                            LeafNodeInt justCreatedLeaf;
+                            justCreatedLeaf.rightSibPageNo = currentRightSibling;
+                            writeNodeToPage(&justCreatedLeaf,currentNode->pageNoArray[i]);
+                        }
+                    }
+                    else{
+                        Page leftchildPage = this->file->readPage(currentNode->pageNoArray[counter]);
+                        LeafNodeInt *leftchild = (LeafNodeInt *) &leftchildPage;
+                        //Swapping siblingPageIDs
+                        PageId currentRightSibling = leftchild->rightSibPageNo;
+                        leftchild->rightSibPageNo = rightpageID;
+                        writeNodeToPage(leftchild, currentNode->pageNoArray[counter]);
+                        LeafNodeInt justCreatedLeaf;
+                        justCreatedLeaf.rightSibPageNo = currentRightSibling;
+                        writeNodeToPage(&justCreatedLeaf,currentNode->pageNoArray[i]);
+                    }
+                }
+            }
             pair<int, PageId> childReturn = this->findPageAndInsert(currentNode->pageNoArray[i], key, rid);
 
             //Check return type , if -1,UINT32_MAX then return
             if (childReturn.first == -1 && childReturn.second == UINT32_MAX) {
                 return pair<int, PageId>(-1, UINT32_MAX);
             }
-                //TODO:Else Child node was split, copy the key to current node
+                //Else Child node was split, copy the key to current node
             else {
                 int isFull = this->isNodeFull(currentNode, INTARRAYNONLEAFSIZE);
 
                 if(isFull){
-
-                    //TODO: IF no space in current node split the current node and push up
+                    //If no space in current node split the current node and push up
                     PageId newPageId;
                     this->allocatePageAndUpdateMap(newPageId, 1);
                     NonLeafNodeInt newNonLeafNode;
@@ -364,7 +578,12 @@ namespace badgerdb {
 
                 //Split the node contents to a new page
                 int newKey = this->splitLeafNodeInTwo(&newLeafNode, currentNode, rid, currentKey);
+                PageId currentSiblingPageId = currentNode->rightSibPageNo;
 
+                //Swapping siblingPageIDs
+
+                currentNode->rightSibPageNo = newLeafPageID;
+                newLeafNode.rightSibPageNo = currentSiblingPageId;
                 //Typecast to string and write the new page
                 writeNodeToPage(&newLeafNode, newLeafPageID);
                 writeNodeToPage(currentNode, currPageId);
@@ -378,56 +597,6 @@ namespace badgerdb {
                 return pair<int, PageId>(-1, UINT32_MAX);
             }
         }
-
-    }
-
-    const void BTreeIndex::insertEntry(const void *key, const RecordId rid) {
-        //TODO: If root gets splitup, create new root, and update metapage.
-        pair<int, PageId> p = this->findPageAndInsert(this->rootPageNum, key, rid);
-        if (p.first == -1 && p.second == UINT32_MAX) {
-            //do nothing
-        }
-        else {
-            PageId newPageId;
-            this->allocatePageAndUpdateMap(newPageId, 1);
-            NonLeafNodeInt newRootNode;
-            newRootNode.keyArray[0] = p.first;
-            newRootNode.pageNoArray[0] = this->rootPageNum;
-            newRootNode.pageNoArray[1] = p.second;
-            this->rootPageNum = newPageId;
-            this->writeNodeToPage(&newRootNode, this->rootPageNum);
-            Page currPage = this->file->readPage(this->headerPageNum);
-            IndexMetaInfo *metaInfo = (IndexMetaInfo*) (&currPage);
-            metaInfo->rootPageNo = this->rootPageNum;
-            this->writeNodeToPage(&metaInfo, this->headerPageNum);
-        }
-        return;
-    }
-
-// -----------------------------------------------------------------------------
-// BTreeIndex::startScan
-// -----------------------------------------------------------------------------
-
-    const void BTreeIndex::startScan(const void *lowValParm,
-                                     const Operator lowOpParm,
-                                     const void *highValParm,
-                                     const Operator highOpParm) {
-
-    }
-
-// -----------------------------------------------------------------------------
-// BTreeIndex::scanNext
-// -----------------------------------------------------------------------------
-
-    const void BTreeIndex::scanNext(RecordId &outRid) {
-
-    }
-
-// -----------------------------------------------------------------------------
-// BTreeIndex::endScan
-// -----------------------------------------------------------------------------
-//
-    const void BTreeIndex::endScan() {
 
     }
 

@@ -42,7 +42,7 @@ using namespace badgerdb;
 int testNum = 1;
 const std::string relationName = "relA";
 //If the relation size is changed then the second parameter 2 chechPassFail may need to be changed to number of record that are expected to be found during the scan, else tests will erroneously be reported to have failed.
-const int	relationSize = 5000;
+const int	relationSize = 20;//5000;
 std::string intIndexName, doubleIndexName, stringIndexName;
 
 // This is the structure for tuples in the base relation
@@ -137,8 +137,8 @@ int main(int argc, char **argv)
 	File::remove(relationName);
 
 	test1();
-	test2();
-	test3();
+	//test2();
+	//test3();
 	//errorTests();
 
   return 1;
@@ -368,7 +368,7 @@ void intTests()
   BTreeIndex index(relationName, intIndexName, bufMgr, offsetof(tuple,i), INTEGER);
 
 	// run some tests
-//	checkPassFail(intScan(&index,25,GT,40,LT), 14)
+	checkPassFail(intScan(&index,25,GT,40,LT), 14)
 //	checkPassFail(intScan(&index,20,GTE,35,LTE), 16)
 //	checkPassFail(intScan(&index,-3,GT,3,LT), 3)
 //	checkPassFail(intScan(&index,996,GT,1001,LT), 4)
