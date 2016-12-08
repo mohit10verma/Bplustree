@@ -617,23 +617,51 @@ void errorTests() {
         std::cout << "BadOpcodesException Test 1 Passed." << std::endl;
     }
 
-    std::cout << "Scan with bad highOp" << std::endl;
+    std::cout << "Scan with bad lowOp" << std::endl;
     try {
-        index.startScan(&int2, GTE, &int5, GTE);
+        index.startScan(&int2, LT, &int5, LT);
         std::cout << "BadOpcodesException Test 2 Failed." << std::endl;
     }
     catch (BadOpcodesException e) {
         std::cout << "BadOpcodesException Test 2 Passed." << std::endl;
     }
 
+    std::cout << "Scan with bad highOp" << std::endl;
+    try {
+        index.startScan(&int2, GTE, &int5, GTE);
+        std::cout << "BadOpcodesException Test 3 Failed." << std::endl;
+    }
+    catch (BadOpcodesException e) {
+        std::cout << "BadOpcodesException Test 3 Passed." << std::endl;
+    }
+
+    std::cout << "Scan with bad highOp" << std::endl;
+    try {
+        index.startScan(&int2, GT, &int5, GT);
+        std::cout << "BadOpcodesException Test 4 Failed." << std::endl;
+    }
+    catch (BadOpcodesException e) {
+        std::cout << "BadOpcodesException Test 4 Passed." << std::endl;
+    }
+
 
     std::cout << "Scan with bad range" << std::endl;
     try {
         index.startScan(&int5, GTE, &int2, LTE);
-        std::cout << "BadScanrangeException Test 1 Failed." << std::endl;
+        std::cout << "BadScanrangeException Test 5 Failed." << std::endl;
     }
     catch (BadScanrangeException e) {
-        std::cout << "BadScanrangeException Test 1 Passed." << std::endl;
+        std::cout << "BadScanrangeException Test 5 Passed." << std::endl;
+    }
+
+
+    std::cout << "Scan with bad range" << std::endl;
+    try {
+        index.startScan(&int5, GT, &int2, LT);
+        std::cout << "BadScanrangeException Test 6 Failed." << std::endl;
+    }
+    catch (BadScanrangeException e) {
+        std::cout << "BadScanrangeException Test 6 Passed." << std::endl;
     }
 
     deleteRelation();
