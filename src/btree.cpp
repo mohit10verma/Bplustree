@@ -139,11 +139,32 @@ namespace badgerdb {
             NonLeafNodeInt* nonLeafNodeData = (NonLeafNodeInt*) &nonLeafPage;
             int i=0;
             //TODO: Binary Search
-            while (this->lowValInt > nonLeafNodeData->keyArray[i] && i<INTARRAYNONLEAFSIZE) {
-                i++;
+            switch (this->lowOp) {
+                case GT:
+                    while ((this->lowValInt +1) >= nonLeafNodeData->keyArray[i] && i<INTARRAYNONLEAFSIZE) {
+                        i++;
+                    }
+                    break;
+                case GTE:
+                    while (this->lowValInt >= nonLeafNodeData->keyArray[i] && i<INTARRAYNONLEAFSIZE) {
+                        i++;
+                    }
+                    break;
+                default:
+                    throw BadOpcodesException();
+            }
+
+
+            if(i==0 && nonLeafNodeData->pageNoArray[i] == UINT32_MAX){
+                return this->searchBtree(nonLeafNodeData->pageNoArray[i + 1]);
+            }
+             else if (i!=0 &&nonLeafNodeData->pageNoArray[i] == UINT32_MAX ){
+                return this->searchBtree(nonLeafNodeData->pageNoArray[i-1]);
+            }  else {
+                return this->searchBtree(nonLeafNodeData->pageNoArray[i]);
             }
             //Recursive search on the child Node
-            return this->searchBtree(nonLeafNodeData->pageNoArray[i]);
+
         }
         else {
             //TODO: reached the Leaf Node return the pageId
@@ -179,7 +200,7 @@ namespace badgerdb {
         int i = 0;
         switch (lowOpParm) {
             case GT:
-                while (this->lowValInt >= currentLeaf->keyArray[i] && i < INTARRAYLEAFSIZE) {
+                while (this->lowValInt+1 > currentLeaf->keyArray[i] && i < INTARRAYLEAFSIZE) {
                     i++;
                 }
                 break;
@@ -204,10 +225,13 @@ namespace badgerdb {
 
     const void BTreeIndex::scanNext(RecordId &outRid) {
         //Already know the leafPageId and data
+        if (!this->scanExecuting) {
+            throw ScanNotInitializedException();
+        }
         LeafNodeInt* currentLeaf;
         currentLeaf = (LeafNodeInt*) (this->currentPageData);
 
-        if (this->nextEntry == INTARRAYLEAFSIZE) {
+        if (this->nextEntry == INTARRAYLEAFSIZE || currentLeaf->keyArray[this->nextEntry] == INT32_MAX ) {
             if (currentLeaf->rightSibPageNo != -1) {
                 this->currentPageNum = currentLeaf->rightSibPageNo;
                 *this->currentPageData = this->file->readPage(this->currentPageNum);
@@ -245,6 +269,12 @@ namespace badgerdb {
         }
     }
 
+    typedef struct tuple {
+        int i;
+        double d;
+        char s[64];
+    } RECORD;
+
 // -----------------------------------------------------------------------------
 // BTreeIndex::endScan
 // -----------------------------------------------------------------------------
@@ -267,10 +297,13 @@ namespace badgerdb {
     int BTreeIndex::getKeyValue(FileIterator &file_it, PageIterator &page_it) {
         RecordId currRecordId = page_it.getCurrentRecord();
         string currRecord = (*file_it).getRecord(currRecordId);
-
-        string keyString = currRecord.substr(this->attrByteOffset, sizeof(int));
+        tuple *fetchedRecord;// = new tuple();
+        fetchedRecord = (tuple*) (currRecord.c_str());
         //int keyValue = stoi(keyString);
-        int keyValue = keyString[0];
+
+        //std::cout<<keyString.c_str();
+        int keyValue = fetchedRecord->i;//keyString[0];
+        std::cout<<keyValue<<"\n";
         return keyValue;
     }
 
@@ -460,7 +493,6 @@ namespace badgerdb {
             currentNode->pageNoArray[INTARRAYNONLEAFSIZE/2 ] = pageId;
             //TODO:Confirm newnode has the pointer set as pageNoArray was split into two
             return newkey;
-
         }
         else{
             this->copyAndSet(newNonLeafNode, currentNode, INTARRAYNONLEAFSIZE/2 , INTARRAYNONLEAFSIZE - INTARRAYNONLEAFSIZE/2);
@@ -509,10 +541,12 @@ namespace badgerdb {
                 int counter = i;
                 int rightpageID = currentNode->pageNoArray[i];
                 if( counter != 0) {
-                    counter--;
+                    counter--;//finding left sibling
                     if(currentNode->pageNoArray[counter] ==UINT32_MAX){
-                        counter--;
+                        assert(0);
+                        /*counter--;
                         if(counter >=0 ) {
+                            //
                             assert(currentNode->pageNoArray[counter] !=UINT32_MAX);//left child can never be non-allocated
                             Page leftchildPage = this->file->readPage(currentNode->pageNoArray[counter]);
                             LeafNodeInt *leftchild = (LeafNodeInt *) &leftchildPage;
@@ -523,9 +557,10 @@ namespace badgerdb {
                             LeafNodeInt justCreatedLeaf;
                             justCreatedLeaf.rightSibPageNo = currentRightSibling;
                             writeNodeToPage(&justCreatedLeaf,currentNode->pageNoArray[i]);
-                        }
+                        }*/
                     }
                     else{
+                        //left sibling present, yay!!!
                         Page leftchildPage = this->file->readPage(currentNode->pageNoArray[counter]);
                         LeafNodeInt *leftchild = (LeafNodeInt *) &leftchildPage;
                         //Swapping siblingPageIDs
@@ -537,6 +572,14 @@ namespace badgerdb {
                         writeNodeToPage(&justCreatedLeaf,currentNode->pageNoArray[i]);
                     }
                 }
+                else if (counter == 0) {
+                    //Left leaf child allocated for the 1st time
+                    assert(currentNode->pageNoArray[1] != UINT32_MAX );
+                    LeafNodeInt justCreatedLeaf;
+                    justCreatedLeaf.rightSibPageNo = currentNode->pageNoArray[1];
+                    writeNodeToPage(&justCreatedLeaf,currentNode->pageNoArray[0]);
+                }
+                writeNodeToPage(currentNode,currPageId);
             }
             pair<int, PageId> childReturn = this->findPageAndInsert(currentNode->pageNoArray[i], key, rid);
 
