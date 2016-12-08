@@ -151,7 +151,7 @@ namespace badgerdb {
                     }
                     break;
                 default:
-                    throw BadOpcodesException();
+                    assert(0);
             }
 
 
@@ -185,6 +185,10 @@ namespace badgerdb {
 
         if (this->lowValInt > this->highValInt) {
             throw BadScanrangeException();
+        }
+
+        if (highOpParm == GT || highOpParm == GTE || lowOpParm == LT || lowOpParm == LTE) {
+            throw BadOpcodesException();
         }
 
         this->scanExecuting = true;
@@ -516,6 +520,7 @@ namespace badgerdb {
     pair<int, PageId> BTreeIndex::findPageAndInsert(PageId currPageId, const void *key, const RecordId rid) {
         int currentKey = *(int *) key;
         Page currPage = this->file->readPage(currPageId);
+
         if (pageTypeMap[currPageId] == 1) {
             NonLeafNodeInt *currentNode = (NonLeafNodeInt *) &currPage;
             //Nonleaf node---------------------------------------------------------------
