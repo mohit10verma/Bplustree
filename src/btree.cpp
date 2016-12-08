@@ -37,7 +37,12 @@ namespace badgerdb {
         outIndexName = relationName + "." + std::to_string(attrByteOffset);
         try {
             this->file = new BlobFile(outIndexName, true);
-            this->file->allocatePage(this->headerPageNum);
+
+            Page headerPage;
+            //Page*& page
+//            this->bufMgr->allocPage(this->file, this->headerPageNum, headerPage);
+            headerPage = this->file->allocatePage(this->headerPageNum);
+            this->allocatePageAndUpdateMap(this->rootPageNum, 1);
             //populate metadata of index header page
             IndexMetaInfo metainfo;
             strcpy(metainfo.relationName, relationName.c_str());
@@ -46,9 +51,10 @@ namespace badgerdb {
             metainfo.rootPageNo = this->rootPageNum;
 
             //Write metadata of index header page
-            this->writeNodeToPage(&metainfo, this->headerPageNum);
+//            this->bufMgr->unPinPage(this->file,this->headerPageNum, true);
+            this->writeMetaInfoToPage(&metainfo, this->headerPageNum);
 
-            this->allocatePageAndUpdateMap(this->rootPageNum, 1);
+
             NonLeafNodeInt rootNode;
             this->writeNodeToPage(&rootNode, this->rootPageNum);
 
@@ -60,10 +66,19 @@ namespace badgerdb {
             //Construct Btree for this relation
             constructBtree(relationName);
 
+            Page currPage = this->file->readPage(this->headerPageNum);
+            //Page *currPage;
+//            this->bufMgr->readPage(this->file,this->headerPageNum, currPage);
+            IndexMetaInfo *metaInfo = (IndexMetaInfo*) (&currPage);
+            metaInfo->rootPageNo = this->rootPageNum;
+//            this->bufMgr->unPinPage(this->file,this->headerPageNum, true);
+            this->writeMetaInfoToPage(metaInfo, this->headerPageNum);
+
         } catch (FileExistsException e)
         {
             this->file = new BlobFile(outIndexName, false);
-            Page headerPage = this->file->readPage(1);//TODO: assumed header page id id 1
+            this->headerPageNum = 1; //TODO:assumed header page id id 1
+            Page headerPage = this->file->readPage(1);//TODO: assumed header page id is 1
             IndexMetaInfo* metaInfo = (IndexMetaInfo*) (&headerPage);
 
             this->rootPageNum = metaInfo->rootPageNo;
@@ -107,7 +122,7 @@ namespace badgerdb {
             Page currPage = this->file->readPage(this->headerPageNum);
             IndexMetaInfo *metaInfo = (IndexMetaInfo*) (&currPage);
             metaInfo->rootPageNo = this->rootPageNum;
-            this->writeNodeToPage(&metaInfo, this->headerPageNum);
+            this->writeMetaInfoToPage(metaInfo, this->headerPageNum);
         }
         return;
     }
@@ -132,8 +147,9 @@ namespace badgerdb {
     }
 
 
-    PageId BTreeIndex::searchBtree(PageId pageNo) {
-        if (this->pageTypeMap[pageNo] == 1) {
+    PageId BTreeIndex::searchBtree(PageId pageNo, bool isLeafNode) {
+
+        if (!isLeafNode) {
             //TODO: NonLeaf Node search
             Page nonLeafPage = this->file->readPage(pageNo);
             NonLeafNodeInt* nonLeafNodeData = (NonLeafNodeInt*) &nonLeafPage;
@@ -156,12 +172,12 @@ namespace badgerdb {
 
 
             if(i==0 && nonLeafNodeData->pageNoArray[i] == UINT32_MAX){
-                return this->searchBtree(nonLeafNodeData->pageNoArray[i + 1]);
+                return this->searchBtree(nonLeafNodeData->pageNoArray[i + 1], nonLeafNodeData->level);
             }
              else if (i!=0 &&nonLeafNodeData->pageNoArray[i] == UINT32_MAX ){
-                return this->searchBtree(nonLeafNodeData->pageNoArray[i-1]);
+                return this->searchBtree(nonLeafNodeData->pageNoArray[i-1], nonLeafNodeData->level);
             }  else {
-                return this->searchBtree(nonLeafNodeData->pageNoArray[i]);
+                return this->searchBtree(nonLeafNodeData->pageNoArray[i], nonLeafNodeData->level);
             }
             //Recursive search on the child Node
 
@@ -396,6 +412,12 @@ namespace badgerdb {
 
         writeNodeToPage(rootNode, this->rootPageNum);
         return;
+    }
+
+    void BTreeIndex::writeMetaInfoToPage(IndexMetaInfo *metaNode, PageId metaLeafPageID) {
+        Page localPage;
+        memcpy((void*) &localPage, (void *) metaNode, sizeof(IndexMetaInfo));
+        this->file->writePage(metaLeafPageID, localPage);
     }
 
 //Very good jjob

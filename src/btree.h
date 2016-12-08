@@ -226,7 +226,7 @@ class BTreeIndex {
 	void insertEntryInRoot(NonLeafNodeInt*, int, const RecordId);
 
 	template<typename T> void writeNodeToPage(T *, PageId);
-
+	void writeMetaInfoToPage(IndexMetaInfo*,PageId);
 	template<typename T> bool isNodeFull(T* , int );
 
 	void copyAndSet(LeafNodeInt*, LeafNodeInt*, int,int);
@@ -238,8 +238,6 @@ class BTreeIndex {
    	* File object for the index file.
    	*/
 	File		*file;
-
-
 
   /**
    * Buffer Manager Instance.
