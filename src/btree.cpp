@@ -74,6 +74,16 @@ namespace badgerdb {
 //            this->bufMgr->unPinPage(this->file,this->headerPageNum, true);
             this->writeMetaInfoToPage(metaInfo, this->headerPageNum);
 
+            /*TODO: remove this*/
+            Page firstPage = this->file->readPage(this->rootPageNum);
+            NonLeafNodeInt *firstNode = (NonLeafNodeInt*) &firstPage;
+            Page firstChild = this->file->readPage(firstNode->pageNoArray[1]);
+            LeafNodeInt *firstChildNode = (LeafNodeInt*) &firstChild;
+            this->file->writePage(this->rootPageNum,firstPage);
+            this->file->writePage(firstNode->pageNoArray[1],firstChild);
+
+            cout<<"here"<<endl;
+
         } catch (FileExistsException e)
         {
             this->file = new BlobFile(outIndexName, false);
@@ -84,6 +94,11 @@ namespace badgerdb {
             this->rootPageNum = metaInfo->rootPageNo;
             this->attributeType = metaInfo->attrType;
             this->attrByteOffset = metaInfo->attrByteOffset;
+            Page firstPage = this->file->readPage(this->rootPageNum);
+            NonLeafNodeInt *firstNode = (NonLeafNodeInt*) &firstPage;
+            Page firstChild = this->file->readPage(firstNode->pageNoArray[1]);
+            LeafNodeInt *firstChildNode = (LeafNodeInt*) &firstChild;
+            cout<<"here"<<endl;
         }
     }
 
@@ -106,7 +121,7 @@ namespace badgerdb {
 
     const void BTreeIndex::insertEntry(const void *key, const RecordId rid) {
         //If root gets splitup, create new root, and update metapage.
-        pair<int, PageId> p = this->findPageAndInsert(this->rootPageNum, key, rid);
+        pair<int, PageId> p = this->findPageAndInsert(this->rootPageNum, key, rid, 0);
         if (p.first == -1 && p.second == UINT32_MAX) {
             //do nothing
         }
@@ -117,6 +132,7 @@ namespace badgerdb {
             newRootNode.keyArray[0] = p.first;
             newRootNode.pageNoArray[0] = this->rootPageNum;
             newRootNode.pageNoArray[1] = p.second;
+            newRootNode.level = 0;
             this->rootPageNum = newPageId;
             this->writeNodeToPage(&newRootNode, this->rootPageNum);
             Page currPage = this->file->readPage(this->headerPageNum);
@@ -126,26 +142,6 @@ namespace badgerdb {
         }
         return;
     }
-
-    void BTreeIndex::printBtree(PageId pageNo) {
-        if (this->pageTypeMap[pageNo] == 1) {
-            //TODO: NonLeaf Node search
-            Page nonLeafPage = this->file->readPage(pageNo);
-            NonLeafNodeInt* nonLeafNodeData = (NonLeafNodeInt*) &nonLeafPage;
-            int i=0;
-            //TODO: Binary Search
-            while (this->lowValInt > nonLeafNodeData->keyArray[i] && i<INTARRAYNONLEAFSIZE) {
-                i++;
-            }
-            //Recursive search on the child Node
-            return;
-        }
-        else {
-            //TODO: reached the Leaf Node return the pageId
-            return ;
-        }
-    }
-
 
     PageId BTreeIndex::searchBtree(PageId pageNo, bool isLeafNode) {
 
@@ -211,7 +207,8 @@ namespace badgerdb {
         this->lowOp = lowOpParm;
         this->highOp = highOpParm;
         //Start search on rootPage
-        PageId foundLeafPage = searchBtree(this->rootPageNum);
+
+        PageId foundLeafPage = searchBtree(this->rootPageNum, 0);
 
         this->currentPageNum = foundLeafPage;
         this->currentPageData = new Page();
@@ -310,7 +307,7 @@ namespace badgerdb {
     void BTreeIndex::allocatePageAndUpdateMap(PageId& page_number, int isNonLeaf) {
         this->file->allocatePage(page_number);
 
-        this->pageTypeMap.insert(pair<PageId, int>(page_number, isNonLeaf));
+        //this->pageTypeMap.insert(pair<PageId, int>(page_number, isNonLeaf));
     }
     //Assume this is type of structure of record
 
@@ -420,7 +417,7 @@ namespace badgerdb {
         this->file->writePage(metaLeafPageID, localPage);
     }
 
-//Very good jjob
+//Very good job
     template<typename T>
     void BTreeIndex::writeNodeToPage(T *newNode, PageId newLeafPageID) {
         //char infoArray[sizeof(T)];
@@ -500,6 +497,8 @@ namespace badgerdb {
         while (currentNode->keyArray[i] < key && i< INTARRAYNONLEAFSIZE) {
             i++;
         }
+        //Copy the level
+        newNonLeafNode->level = currentNode->level;
         //i = Position to insert
         if (i == INTARRAYNONLEAFSIZE/2) {
             //Do not insert, same key should be returned back
@@ -533,17 +532,16 @@ namespace badgerdb {
             }
 
             newNonLeafNode->pageNoArray[counter] = UINT32_MAX;
-
             return newkey;
 
         }
     }
 
-    pair<int, PageId> BTreeIndex::findPageAndInsert(PageId currPageId, const void *key, const RecordId rid) {
+    pair<int, PageId> BTreeIndex::findPageAndInsert(PageId currPageId, const void *key, const RecordId rid, bool isLeafNode) {
         int currentKey = *(int *) key;
         Page currPage = this->file->readPage(currPageId);
 
-        if (pageTypeMap[currPageId] == 1) {
+        if (!isLeafNode) {
             NonLeafNodeInt *currentNode = (NonLeafNodeInt *) &currPage;
             //Nonleaf node---------------------------------------------------------------
             //Check if root page and empty , insert in root nad leaf
@@ -571,20 +569,6 @@ namespace badgerdb {
                     counter--;//finding left sibling
                     if(currentNode->pageNoArray[counter] ==UINT32_MAX){
                         assert(0);
-                        /*counter--;
-                        if(counter >=0 ) {
-                            //
-                            assert(currentNode->pageNoArray[counter] !=UINT32_MAX);//left child can never be non-allocated
-                            Page leftchildPage = this->file->readPage(currentNode->pageNoArray[counter]);
-                            LeafNodeInt *leftchild = (LeafNodeInt *) &leftchildPage;
-                            //Swapping siblingPageIDs
-                            PageId currentRightSibling = leftchild->rightSibPageNo;
-                            leftchild->rightSibPageNo = rightpageID;
-                            writeNodeToPage(leftchild, currentNode->pageNoArray[counter]);
-                            LeafNodeInt justCreatedLeaf;
-                            justCreatedLeaf.rightSibPageNo = currentRightSibling;
-                            writeNodeToPage(&justCreatedLeaf,currentNode->pageNoArray[i]);
-                        }*/
                     }
                     else{
                         //left sibling present, yay!!!
@@ -608,7 +592,7 @@ namespace badgerdb {
                 }
                 writeNodeToPage(currentNode,currPageId);
             }
-            pair<int, PageId> childReturn = this->findPageAndInsert(currentNode->pageNoArray[i], key, rid);
+            pair<int, PageId> childReturn = this->findPageAndInsert(currentNode->pageNoArray[i], key, rid, currentNode->level);
 
             //Check return type , if -1,UINT32_MAX then return
             if (childReturn.first == -1 && childReturn.second == UINT32_MAX) {
@@ -667,7 +651,5 @@ namespace badgerdb {
                 return pair<int, PageId>(-1, UINT32_MAX);
             }
         }
-
     }
-
 }

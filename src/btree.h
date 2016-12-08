@@ -164,6 +164,7 @@ struct NonLeafNodeInt{
 			pageNoArray[i] = UINT32_MAX;
 		}
 		pageNoArray[INTARRAYNONLEAFSIZE] = UINT32_MAX;
+		level = 1;
 	}
 
 };
@@ -233,7 +234,7 @@ class BTreeIndex {
 	void copyAndSet(NonLeafNodeInt*, NonLeafNodeInt*, int,int);
 	int splitLeafNodeInTwo(LeafNodeInt* newLeafNode, LeafNodeInt* currentNode, RecordId r, int k);
 	int splitNonLeafNode(NonLeafNodeInt* newNonLeafNode, NonLeafNodeInt* currentNode, int key, PageId pageId);
-	PageId searchBtree(PageId);
+	PageId searchBtree(PageId, bool);
 	/**
    	* File object for the index file.
    	*/
@@ -339,13 +340,9 @@ class BTreeIndex {
 
  public:
 
-	//1 for nonleaf, 0 for leaf
-	//key = pageId
-	std::map<PageId, int> pageTypeMap;
-
 	void printBtree(PageId);
 
-	std::pair<int,PageId > findPageAndInsert(PageId currPage, const void *key, const RecordId rid);
+	std::pair<int,PageId > findPageAndInsert(PageId currPage, const void *key, const RecordId rid, bool);
   /**
    * BTreeIndex Constructor. 
 	 * Check to see if the corresponding index file exists. If so, open the file.
