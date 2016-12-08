@@ -43,6 +43,7 @@ int testNum = 1;
 const std::string relationName = "relA";
 //If the relation size is changed then the second parameter 2 chechPassFail may need to be changed to number of record that are expected to be found during the scan, else tests will erroneously be reported to have failed.
 const int relationSize = 5000;
+const int relationSizeBig = 750000;
 std::string intIndexName, doubleIndexName, stringIndexName;
 
 // This is the structure for tuples in the base relation
@@ -69,15 +70,18 @@ void createRelationForward();
 void createRelationBackward();
 
 void createRelationRandom();
+void createRelationRandomBig();
 void createRelationNegative();
 
 void intTests();
+void intTestsBig();
 void intTestsNegative();
 void intTestsComplex();
 
 int intScan(BTreeIndex *index, int lowVal, Operator lowOp, int highVal, Operator highOp);
 
 void indexTests();
+void indexTestsBig();
 void indexTestsNegative();
 void indexTestsComplex();
 
@@ -88,6 +92,7 @@ void test2();
 void test3();
 void test4();
 void test5();
+void test6();
 
 void errorTests();
 
@@ -151,6 +156,7 @@ int main(int argc, char **argv) {
     test3();
     test4();
     test5();
+    test6();
     errorTests();
 
     return 1;
@@ -203,6 +209,16 @@ void test5() {
     std::cout << "createRelationRandom" << std::endl;
     createRelationRandom();
     indexTestsComplex();
+    deleteRelation();
+}
+
+void test6() {
+    // Create a relation with tuples valued 0 to relationSize in random order and perform index tests
+    // on attributes of all three types (int, double, string)
+    std::cout << "--------------------" << std::endl;
+    std::cout << "createRelationRandom" << std::endl;
+    createRelationRandomBig();
+    indexTestsBig();
     deleteRelation();
 }
 
@@ -388,12 +404,84 @@ void createRelationRandom() {
 }
 
 // -----------------------------------------------------------------------------
+// createRelationRandomBig
+// -----------------------------------------------------------------------------
+
+void createRelationRandomBig() {
+    // destroy any old copies of relation file
+    try {
+        File::remove(relationName);
+    }
+    catch (FileNotFoundException e) {
+    }
+    file1 = new PageFile(relationName, true);
+
+    // initialize all of record1.s to keep purify happy
+    memset(record1.s, ' ', sizeof(record1.s));
+    PageId new_page_number;
+    Page new_page = file1->allocatePage(new_page_number);
+
+    // insert records in random order
+
+    std::vector<int> intvec(relationSizeBig);
+    for (int i = 0; i < relationSizeBig; i++) {
+        intvec[i] = i;
+    }
+
+    long pos;
+    int val;
+    int i = 0;
+    while (i < relationSizeBig) {
+        pos = random() % (relationSizeBig - i);
+        val = intvec[pos];
+        sprintf(record1.s, "%05d string record", val);
+        record1.i = val;
+        record1.d = val;
+
+        std::string new_data(reinterpret_cast<char *>(&record1), sizeof(RECORD));
+
+        while (1) {
+            try {
+                new_page.insertRecord(new_data);
+                break;
+            }
+            catch (InsufficientSpaceException e) {
+                file1->writePage(new_page_number, new_page);
+                new_page = file1->allocatePage(new_page_number);
+            }
+        }
+
+        int temp = intvec[relationSizeBig - 1 - i];
+        intvec[relationSizeBig - 1 - i] = intvec[pos];
+        intvec[pos] = temp;
+        i++;
+    }
+
+    file1->writePage(new_page_number, new_page);
+}
+
+// -----------------------------------------------------------------------------
 // indexTests
 // -----------------------------------------------------------------------------
 
 void indexTests() {
     if (testNum == 1) {
         intTests();
+        try {
+            File::remove(intIndexName);
+        }
+        catch (FileNotFoundException e) {
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// indexTestsBig
+// -----------------------------------------------------------------------------
+
+void indexTestsBig() {
+    if (testNum == 1) {
+        intTestsBig();
         try {
             File::remove(intIndexName);
         }
@@ -437,6 +525,24 @@ void indexTestsComplex() {
 // -----------------------------------------------------------------------------
 
 void intTests() {
+    std::cout << "Create a B+ Tree index on the integer field" << std::endl;
+    BTreeIndex index(relationName, intIndexName, bufMgr, offsetof(tuple, i), INTEGER);
+
+    // run some tests
+    checkPassFail(intScan(&index, 1, GT, 19, LT), 17)
+    checkPassFail(intScan(&index, 20, GTE, 35, LTE), 16)
+    checkPassFail(intScan(&index, -3, GT, 3, LT), 3)
+    checkPassFail(intScan(&index, 996, GT, 1001, LT), 4)
+    checkPassFail(intScan(&index, 0, GT, 1, LT), 0)
+    checkPassFail(intScan(&index, 300, GT, 400, LT), 99)
+    checkPassFail(intScan(&index, 3000, GTE, 4000, LT), 1000)
+}
+
+// -----------------------------------------------------------------------------
+// intTestsBig
+// -----------------------------------------------------------------------------
+
+void intTestsBig() {
     std::cout << "Create a B+ Tree index on the integer field" << std::endl;
     BTreeIndex index(relationName, intIndexName, bufMgr, offsetof(tuple, i), INTEGER);
 
