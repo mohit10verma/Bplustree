@@ -341,7 +341,8 @@ class BTreeIndex {
 
  public:
 
-	void printBtree(PageId);
+	void printBtree();
+	void print(const PageId pageId, int isLeaf, int level);
 
 	std::pair<int,PageId > findPageAndInsert(PageId currPage, const void *key, const RecordId rid, bool);
   /**

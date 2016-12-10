@@ -118,6 +118,37 @@ namespace badgerdb {
         delete this->file;
     }
 
+    void BTreeIndex::print(const PageId pageId, int isLeaf, int level) {
+        Page *page;
+        this->bufMgr->readPage(this->file, pageId, page);
+        if (isLeaf) {
+            LeafNodeInt* leafNode = (LeafNodeInt*) page;
+        }
+        else {
+            NonLeafNodeInt *nonLeafNodeData = (NonLeafNodeInt *) page;
+            cout<< "Level : "<< level <<" <";
+            for (int i=0;i<INTARRAYNONLEAFSIZE;i++) {
+                if (nonLeafNodeData->keyArray[i] != INT32_MAX)
+                    cout<<nonLeafNodeData->keyArray[i] << " ";
+            }
+            cout<< "> \n";
+            // recursive for children
+            PageId childPageId;
+            int childLevel = nonLeafNodeData->level;
+            for (int i=0;i<INTARRAYNONLEAFSIZE;i++) {
+                if (nonLeafNodeData->keyArray[i] != INT32_MAX) {
+                    childPageId = nonLeafNodeData->pageNoArray[i];
+                    print(childPageId, childLevel, level+1);
+                }
+            }
+        }
+        this->bufMgr->unPinPage(this->file, pageId, false);
+    }
+
+    void BTreeIndex::printBtree() {
+        this->print(this->rootPageNum, 0, 0);
+    }
+
 // -----------------------------------------------------------------------------
 // BTreeIndex::insertEntry
 // -----------------------------------------------------------------------------
@@ -334,7 +365,7 @@ namespace badgerdb {
 
         //std::cout<<keyString.c_str();
         int keyValue = fetchedRecord->i;//keyString[0];
-        std::cout<<keyValue<<"\n";
+//        std::cout<<keyValue<<"\n";
         return keyValue;
     }
 
