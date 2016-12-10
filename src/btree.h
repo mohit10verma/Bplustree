@@ -222,12 +222,13 @@ class BTreeIndex {
 	/*
  	*
  	*/
-	void allocatePageAndUpdateMap(PageId&,int);
+	//void allocatePageAndUpdateMap(PageId&,int);
+	void AllocatePageAndSetDefaultValues(PageId& pageNo, Page *&currPage, bool isLeaf);
 	bool isRootPageEmpty(NonLeafNodeInt*);
-	void insertEntryInRoot(NonLeafNodeInt*, int, const RecordId);
+	void insertFirstEntryInRoot(NonLeafNodeInt *, int, const RecordId);
 
-	template<typename T> void writeNodeToPage(T *, PageId);
-	void writeMetaInfoToPage(IndexMetaInfo*,PageId);
+	template<typename T> void writeNodeToPage(T *, PageId, Page*);
+	void writeMetaInfoToPage(IndexMetaInfo*,PageId, Page*);
 	template<typename T> bool isNodeFull(T* , int );
 
 	void copyAndSet(LeafNodeInt*, LeafNodeInt*, int,int);
