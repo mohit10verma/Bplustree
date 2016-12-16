@@ -111,8 +111,10 @@ namespace badgerdb {
     }
 
     BTreeIndex::~BTreeIndex() {
+        //Unpin the HeaderPage and the rootpage
         this->bufMgr->unPinPage(this->file, this->headerPageNum, true);
         this->bufMgr->unPinPage(this->file, this->rootPageNum, true);
+        //Flush the remaining files of the index file in the buffer Manager
         this->bufMgr->flushFile(this->file);
 
         delete this->file;
@@ -152,6 +154,11 @@ namespace badgerdb {
 // -----------------------------------------------------------------------------
 // BTreeIndex::insertEntry
 // -----------------------------------------------------------------------------
+    /**
+     * InsertEntry: Insert new key into the Btree
+     * @param key -> New key to be inserted into the Btree index
+     * @param rid -> recordId of the new key to be inserted into the btree index
+     */
     const void BTreeIndex::insertEntry(const void *key, const RecordId rid) {
         //If root gets splitup, create new root, and update metapage.
         pair<int, PageId> p = this->findPageAndInsert(this->rootPageNum, key, rid, 0);
@@ -159,13 +166,16 @@ namespace badgerdb {
             //do nothing
         }
         else {
+            //Case: If root is split
+
+            //Unpin the old rootPage as we have new rootPage
             this->bufMgr->unPinPage(this->file, this->rootPageNum, true);
 
             PageId newPageId;
             Page* newRootPage;
-//            this->allocatePageAndUpdateMap(newPageId, 1);
             AllocatePageAndSetDefaultValues(newPageId, newRootPage, false);
 
+            //Setup the new root node contents
             NonLeafNodeInt* newRootNode = (NonLeafNodeInt*) newRootPage;
             newRootNode->keyArray[0] = p.first;
             newRootNode->pageNoArray[0] = this->rootPageNum;
@@ -184,6 +194,11 @@ namespace badgerdb {
         return;
     }
 
+    /**
+     * SerachBtree: Searches the btree once the user calls the startscan with the key
+     * @param pageNo-> rootPage number to start the search from
+     * @param isLeafNode-> true if leaf node else False
+     */
     PageId BTreeIndex::searchBtree(PageId pageNo, bool isLeafNode) {
 
         if (!isLeafNode) {
@@ -234,7 +249,21 @@ namespace badgerdb {
 // -----------------------------------------------------------------------------
 // BTreeIndex::startScan
 // -----------------------------------------------------------------------------
-
+    /**
+	 * Begin a filtered scan of the index.  For instance, if the method is called
+	 * using ("a",GT,"d",LTE) then we should seek all entries with a value
+	 * greater than "a" and less than or equal to "d".
+	 * If another scan is already executing, that needs to be ended here.
+	 * Set up all the variables for scan. Start from root to find out the leaf page that contains the first RecordID
+	 * that satisfies the scan parameters. Keep that page pinned in the buffer pool.
+   * @param lowVal	Low value of range, pointer to integer / double / char string
+   * @param lowOp		Low operator (GT/GTE)
+   * @param highVal	High value of range, pointer to integer / double / char string
+   * @param highOp	High operator (LT/LTE)
+   * @throws  BadOpcodesException If lowOp and highOp do not contain one of their their expected values
+   * @throws  BadScanrangeException If lowVal > highval
+	 * @throws  NoSuchKeyFoundException If there is no key in the B+ tree that satisfies the scan criteria.
+	**/
     const void BTreeIndex::startScan(const void *lowValParm,
                                      const Operator lowOpParm,
                                      const void *highValParm,
@@ -287,7 +316,13 @@ namespace badgerdb {
 // -----------------------------------------------------------------------------
 // BTreeIndex::scanNext
 // -----------------------------------------------------------------------------
-
+    /**
+	 * Fetch the record id of the next index entry that matches the scan.
+	 * Return the next record from current page being scanned. If current page has been scanned to its entirety, move on to the right sibling of current page, if any exists, to start scanning that page. Make sure to unpin any pages that are no longer required.
+   * @param outRid	RecordId of next record found that satisfies the scan criteria returned in this
+	 * @throws ScanNotInitializedException If no scan has been initialized.
+	 * @throws IndexScanCompletedException If no more records, satisfying the scan criteria, are left to be scanned.
+	**/
     const void BTreeIndex::scanNext(RecordId &outRid) {
         //Already know the leafPageId and data
         if (!this->scanExecuting) {
@@ -346,6 +381,10 @@ namespace badgerdb {
 // BTreeIndex::endScan
 // -----------------------------------------------------------------------------
 //
+    /**
+	 * Terminate the current scan. Unpin any pinned pages. Reset scan specific variables.
+	 * @throws ScanNotInitializedException If no scan has been initialized.
+	**/
     const void BTreeIndex::endScan() {
         if (!this->scanExecuting) {
             throw ScanNotInitializedException();
@@ -354,8 +393,12 @@ namespace badgerdb {
         this->bufMgr->unPinPage(this->file, this->currentPageNum, false);
     }
 
-    //Assume this is type of structure of record
-
+    /**
+     * Given the FileIterator and PageIterator, fetches the next record from the
+     * page iterator and extracts key from that record
+     * @param fileit -> File Iterator
+     * @param page_ir -> Page Iterator
+     */
     int BTreeIndex::getKeyValue(FileIterator &file_it, PageIterator &page_it) {
         RecordId currRecordId = page_it.getCurrentRecord();
         string currRecord = (*file_it).getRecord(currRecordId);
@@ -369,6 +412,11 @@ namespace badgerdb {
         return keyValue;
     }
 
+    /**
+     * ConstructBTree: Called from the btreeIndex constructor
+     * which will iterate throught the give relation and constructs the btree index
+     * @param relationName -> Relation Name
+     */
     void BTreeIndex::constructBtree(const std::string &relationName) {
 
         PageFile relation = PageFile::open(relationName);//open relation page file
@@ -386,6 +434,16 @@ namespace badgerdb {
         }
         //Destructor of Pagefile closes the file. No explicit close
     }
+    /**
+     * shiftAndInsert: Find the position of the currKey into the keyArray and inserts into the array
+     * shifting rest of the elements
+     * @param keyArray-> keyarray which may be in LeafNode or NonLeafNode
+     * @param Tarray-> PageNoArray incase of nonLeafNode or rid array incase of LeafNode
+     * @param currKey -> the key to be inserted into the keyArray
+     * @param Tvalue -> Pid incase of nonLeafNode or rid incase of the LeafNode
+     * @param keyArray_size -> Size of the key array
+     * @param array_size2 -> which is the size of the PageNoArray or the rid array
+     */
 
     template <typename T>
     void shiftAndInsert(int *keyArray, T *TArray, int &currKey, const T &Tvalue, int keyArray_size, int array_size2) {
@@ -431,6 +489,10 @@ namespace badgerdb {
         return;
     }
 
+    /**
+     * isRootPageEmpty: Check if the root is empty
+     * @param rootNode: RootNode pointer
+     */
     bool BTreeIndex::isRootPageEmpty(NonLeafNodeInt *rootNode) {
 
         if (rootNode->keyArray[0] == INT32_MAX) {
@@ -441,6 +503,13 @@ namespace badgerdb {
         }
     }
 
+    /**
+     * insertFirstEntryInRoot: Called when first entry in the root node needs to be inserted
+     * creates a new child page and inserts the key and rid pair in it
+     * @param rootNode -> Root Node pointer
+     * @param currKey -> New key to be inserted into the root
+     * @param Rid -> new rid to be inserted into the new created leage child
+     */
     void BTreeIndex::insertFirstEntryInRoot(NonLeafNodeInt *rootNode, int currKey, const RecordId rid) {
         //Alocate child node and populate default contents
         rootNode->keyArray[0] = currKey;
@@ -455,24 +524,22 @@ namespace badgerdb {
         return;
     }
 
+    /**
+     * writeMetaInfoToPage: Memcpy the metaNode into the HeadrPage and unpin the page
+     * @param metaNode-> MetNode pointer which is newly craeted
+     * @param metaLeafPageID -> PageID of the new metaPage
+     * @param headerPage -> headerPage pointer
+     */
     void BTreeIndex::writeMetaInfoToPage(IndexMetaInfo *metaNode, PageId metaLeafPageID, Page* headerPage) {
         memcpy((void*) headerPage, (void *) metaNode, sizeof(IndexMetaInfo));
         this->bufMgr->unPinPage(this->file, metaLeafPageID, true);
     }
 
-//Very good job
-    template<typename T>
-    void BTreeIndex::writeNodeToPage(T *newNode, PageId pageId, Page* page) {
-        //memcpy((void*) page, (void *) newNode, sizeof(T));
-        try {
-            this->bufMgr->unPinPage(this->file, pageId, true);
-        }
-        catch (PageNotPinnedException) {
-            std::cout << "Trying to unpin a page with pin Cnt = 0" << std::endl;
-            assert(0);
-        }
-    }
-
+    /**
+     * isNodeFull: Check if the given node which is either leaf or non leaf is full
+     * @param node -> leaf or nonleaf Node
+     * @param size -> size of the key array
+     */
     template<typename T>
     bool BTreeIndex::isNodeFull(T *node, int size) {
         if (node->keyArray[size-1] != INT32_MAX) {
@@ -483,6 +550,14 @@ namespace badgerdb {
         }
     }
 
+    /**
+     * copyAndSet: Overloaded function which copies half the contents of the currentNode (which is leafNode in this function)
+     * which is being split into the newLeafNode
+     * @param newLeafNode -> newLeafNode pointer
+     * @param currentNode -> currentNode pointer which is being split
+     * @param start-> start point form where the contents need to be copied
+     * @param size-> end point till where contents need to be copied
+     */
     //for leaf node
     void BTreeIndex::copyAndSet(LeafNodeInt* newLeafNode, LeafNodeInt* currentNode, int start, int size)
     {
@@ -499,6 +574,14 @@ namespace badgerdb {
         }
     }
 
+    /**
+     * copyAndSet: Overloaded function which copies half the contents of the currentNode(NonLeafNode in this case)
+     * which is being split into the newLeafNode
+     * @param newLeafNode -> newLeafNode pointer
+     * @param currentNode -> currentNode pointer which is being split
+     * @param start-> start point form where the contents need to be copied
+     * @param size-> end point till where contents need to be copied
+     */
     //For non-leaf node
     void BTreeIndex::copyAndSet(NonLeafNodeInt* newNonLeafNode, NonLeafNodeInt* currentNode, int start, int size)
     {
@@ -515,6 +598,14 @@ namespace badgerdb {
         //currentNode->pageNoArray[INTARRAYNONLEAFSIZE] = UINT32_MAX;
     }
 
+    /**
+     * splitLeafNodeInTwo: split given leaf node(CurrentNode) by using the newLeafNode pointer which is passed
+     * and insert the key and rid pair in the appropriate position
+     * @param newLeafNode -> New Leaf Node
+     * @param currentNode -> Leaf Node which is being split
+     * @param r -> Record id of the new key which cause the node to split
+     * @param k -> new key which cause the split to occur and needs to be inserted
+     */
     int BTreeIndex::splitLeafNodeInTwo(LeafNodeInt* newLeafNode, LeafNodeInt* currentNode, RecordId r, int k)
     {
         int i = 0;
@@ -536,8 +627,14 @@ namespace badgerdb {
         return newLeafNode->keyArray[0];
     }
 
-
-
+    /**
+     * splitLeafNodeInTwo: split given nonLeaf node(CurrentNode) by using the newNonLeafNode pointer which is passed
+     * and insert the key and rid pair in the appropriate position
+     * @param newLeafNode -> New Leaf Node
+     * @param currentNode -> Leaf Node which is being split
+     * @param key -> new key which cause the split to occur and needs to be inserted
+     * @param pageId -> Page id of the new key which cause the node to split
+     */
     int BTreeIndex::splitNonLeafNode(NonLeafNodeInt* newNonLeafNode, NonLeafNodeInt* currentNode, int key, PageId pageId){
         int i = 0;
         while (currentNode->keyArray[i] < key && i< INTARRAYNONLEAFSIZE) {
@@ -583,6 +680,13 @@ namespace badgerdb {
         }
     }
 
+    /**
+     * findPageAndInsert: Find the Page where the new key and the rid pair needs to be inserted into the Btree
+     * @param currPageId ->Page ID to start searching from, which can be leaf or nonLeafNode
+     * @param key -> key which needs to be inserted
+     * @param rid -> rid related to the key which is passed
+     * @param isLeafNode -> true incase of the leaf node or else false
+     */
     pair<int, PageId> BTreeIndex::findPageAndInsert(PageId currPageId, const void *key, const RecordId rid, bool isLeafNode) {
         int currentKey = *(int *) key;
 
