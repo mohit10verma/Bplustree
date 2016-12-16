@@ -25,15 +25,22 @@
 using namespace std;
 namespace badgerdb {
 
-// -----------------------------------------------------------------------------
-// BTreeIndex::BTreeIndex -- Constructor
-// -----------------------------------------------------------------------------
-
-    BTreeIndex::BTreeIndex(const std::string &relationName,
-                           std::string &outIndexName,
-                           BufMgr *bufMgrIn,
-                           const int attrByteOffset,
-                           const Datatype attrType) {
+/**
+   * BTreeIndex Constructor.
+	 * Check to see if the corresponding index file exists. If so, open the file.
+	 * If not, create it and insert entries for every tuple in the base relation using FileScan class.
+   *
+   * @param relationName        Name of file.
+   * @param outIndexName        Return the name of index file.
+   * @param bufMgrIn						Buffer Manager Instance
+   * @param attrByteOffset			Offset of attribute, over which index is to be built, in the record
+   * @param attrType						Datatype of attribute over which index is built
+   * @throws  BadIndexInfoException     If the index file already exists for the corresponding attribute, but values in metapage(relationName, attribute byte offset, attribute type etc.) do not match with values received through constructor parameters.
+   */    BTreeIndex::BTreeIndex(const std::string &relationName,
+                                std::string &outIndexName,
+                                BufMgr *bufMgrIn,
+                                const int attrByteOffset,
+                                const Datatype attrType) {
         this->bufMgr = bufMgrIn;
         outIndexName = relationName + "." + std::to_string(attrByteOffset);
         try {
@@ -61,32 +68,31 @@ namespace badgerdb {
             this->attrByteOffset = attrByteOffset;
             this->leafOccupancy = 0;
             this->nodeOccupancy = 0;
-            //TODO: initialize members specific to scanning
             //Construct Btree for this relation
             constructBtree(relationName);
 
         } catch (FileExistsException e)
         {
             this->file = new BlobFile(outIndexName, false);
-            this->headerPageNum = 1; //TODO:assumed header page id id 1
+            this->headerPageNum = 1;//Assumed that header pageId = 1, which is always the pageId for the 1st page of a new file
             Page* headerPage;
             this->bufMgr->readPage(this->file, 1, headerPage);
-            IndexMetaInfo* metaInfo = (IndexMetaInfo*) (&headerPage);
+            IndexMetaInfo* metaInfo = (IndexMetaInfo*) headerPage;
 
             this->rootPageNum = metaInfo->rootPageNo;
             this->attributeType = metaInfo->attrType;
             this->attrByteOffset = metaInfo->attrByteOffset;
+            string metaInfoRelationName = string(metaInfo->relationName);
+            if (metaInfoRelationName.compare(relationName)!=0 || this->attrByteOffset!= attrByteOffset || this->attributeType!= attrType) {
+                throw BadIndexInfoException("Bad Index Info given\n");//Mentioned in btree.h file
+            }
             Page* rootPage;
             this->bufMgr->readPage(this->file, this->rootPageNum, rootPage);
         }
     }
 
 
-
-
-// -----------------------------------------------------------------------------
-// BTreeIndex::~BTreeIndex -- destructor
-// -----------------------------------------------------------------------------
+    //allocates a new page in the file, and sets the default values, depending on the type of node
     void BTreeIndex::AllocatePageAndSetDefaultValues(PageId& pageNo, Page *&currPage, bool isLeaf){
         this->bufMgr->allocPage(this->file, pageNo, currPage);
 
@@ -97,7 +103,7 @@ namespace badgerdb {
                 leafNode->ridArray[i].page_number = UINT32_MAX;
                 leafNode->ridArray[i].slot_number = UINT16_MAX;
             }
-            leafNode->rightSibPageNo = -1;
+            leafNode->rightSibPageNo = UINT32_MAX;
         }
         else {
             NonLeafNodeInt* nonLeafNode = (NonLeafNodeInt*)currPage;
@@ -109,6 +115,13 @@ namespace badgerdb {
             nonLeafNode->level = 1;
         }
     }
+
+    /**
+     * BTreeIndex Destructor.
+       * End any initialized scan, flush index file, after unpinning any pinned pages, from the buffer manager
+       * and delete file instance thereby closing the index file.
+       * Destructor should not throw any exceptions. All exceptions should be caught in here itself.
+     **/
 
     BTreeIndex::~BTreeIndex() {
         //Unpin the HeaderPage and the rootpage
@@ -124,7 +137,8 @@ namespace badgerdb {
         Page *page;
         this->bufMgr->readPage(this->file, pageId, page);
         if (isLeaf) {
-            LeafNodeInt* leafNode = (LeafNodeInt*) page;
+            //Not printing leafNodes currently -- Do nothing
+            //LeafNodeInt* leafNode = (LeafNodeInt*) page;
         }
         else {
             NonLeafNodeInt *nonLeafNodeData = (NonLeafNodeInt *) page;
@@ -207,7 +221,7 @@ namespace badgerdb {
             this->bufMgr->readPage(this->file, pageNo, nonLeafPage);
             NonLeafNodeInt* nonLeafNodeData = (NonLeafNodeInt*) nonLeafPage;
             int i=0;
-            //TODO: Binary Search
+
             switch (this->lowOp) {
                 case GT:
                     while ((this->lowValInt +1) >= nonLeafNodeData->keyArray[i] && i<INTARRAYNONLEAFSIZE) {
@@ -229,7 +243,7 @@ namespace badgerdb {
                 childPageId = nonLeafNodeData->pageNoArray[i + 1];
 
             }
-             else if (i!=0 &&nonLeafNodeData->pageNoArray[i] == UINT32_MAX ){
+            else if (i!=0 &&nonLeafNodeData->pageNoArray[i] == UINT32_MAX ){
                 childPageId = nonLeafNodeData->pageNoArray[i - 1];
 
             }  else {
@@ -302,7 +316,7 @@ namespace badgerdb {
                 while (this->lowValInt > currentLeaf->keyArray[i] && i < INTARRAYLEAFSIZE) {
                     i++;
                 }
-            break;
+                break;
             default:
                 assert(0);
         }
@@ -332,7 +346,7 @@ namespace badgerdb {
         currentLeaf = (LeafNodeInt*) (this->currentPageData);
 
         if (this->nextEntry == INTARRAYLEAFSIZE || currentLeaf->keyArray[this->nextEntry] == INT32_MAX ) {
-            if (currentLeaf->rightSibPageNo != -1) {
+            if (currentLeaf->rightSibPageNo != UINT32_MAX) {
                 PageId  oldLeafNodeId = currentLeaf->rightSibPageNo;
                 this->bufMgr->unPinPage(this->file, this->currentPageNum, false);
                 this->currentPageNum = oldLeafNodeId;
@@ -356,7 +370,7 @@ namespace badgerdb {
                 else {
                     throw IndexScanCompletedException();
                 }
-            break;
+                break;
             case LT:
                 if (currentLeaf->keyArray[this->nextEntry] < this->highValInt) {
                     outRid = currentLeaf->ridArray[this->nextEntry];
@@ -365,12 +379,13 @@ namespace badgerdb {
                 else {
                     throw IndexScanCompletedException();
                 }
-            break;
+                break;
             default:
                 assert(0);
         }
     }
 
+    //structure of record in the relation, copied from main.cpp -- Needed here for typecasting the record back
     typedef struct tuple {
         int i;
         double d;
@@ -402,13 +417,12 @@ namespace badgerdb {
     int BTreeIndex::getKeyValue(FileIterator &file_it, PageIterator &page_it) {
         RecordId currRecordId = page_it.getCurrentRecord();
         string currRecord = (*file_it).getRecord(currRecordId);
+        //Assumed Records to be of the type "struct tuple" defined in main.cpp
         tuple *fetchedRecord;// = new tuple();
         fetchedRecord = (tuple*) (currRecord.c_str());
         //int keyValue = stoi(keyString);
 
-        //std::cout<<keyString.c_str();
         int keyValue = fetchedRecord->i;//keyString[0];
-//        std::cout<<keyValue<<"\n";
         return keyValue;
     }
 
@@ -447,7 +461,7 @@ namespace badgerdb {
 
     template <typename T>
     void shiftAndInsert(int *keyArray, T *TArray, int &currKey, const T &Tvalue, int keyArray_size, int array_size2) {
-        //TODO: Binary search
+
         //Called only if node has space
 
         int i = 0;

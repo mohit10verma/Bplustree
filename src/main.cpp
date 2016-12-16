@@ -88,17 +88,19 @@ void indexTestsEven();
 void indexTestsBig();
 void indexTestsNegative();
 void indexTestsComplex();
+void indexExistsTest();
 
 void test1();
-
 void test2();
 
 void test3();
+//Tests added
 void test4();
 void test5();
 void test6();
 void test7();
 void test8();
+void test9();
 
 void errorTests();
 
@@ -165,14 +167,20 @@ int main(int argc, char **argv) {
     test6();
     test7();
     test8();
+    test9();
     errorTests();
+    try {
+        File::remove(intIndexName);
+    }
+    catch (FileNotFoundException e) {
+    }
 
     return 1;
 }
 
 void test1() {
     // Create a relation with tuples valued 0 to relationSize and perform index tests
-    // on attributes of all three types (int, double, string)
+    // on attributes of type int
     std::cout << "---------------------" << std::endl;
     std::cout << "createRelationForward" << std::endl;
     createRelationForward();
@@ -182,7 +190,7 @@ void test1() {
 
 void test2() {
     // Create a relation with tuples valued 0 to relationSize in reverse order and perform index tests
-    // on attributes of all three types (int, double, string)
+    // on attributes of type int
     std::cout << "----------------------" << std::endl;
     std::cout << "createRelationBackward" << std::endl;
     createRelationBackward();
@@ -192,7 +200,7 @@ void test2() {
 
 void test3() {
     // Create a relation with tuples valued -relationSize to -1 and perform index tests
-    // on attributes of all three types (int, double, string)
+    // on attributes of type int
     std::cout << "--------------------" << std::endl;
     std::cout << "createRelationRandom" << std::endl;
     createRelationRandom();
@@ -201,8 +209,9 @@ void test3() {
 }
 
 void test4() {
-    // Create a relation with tuples valued 0 to relationSize in random order and perform index tests
-    // on attributes of all three types (int, double, string)
+    // Create a relation with tuples valued 0 to -relationSize in the order: -relationSize to 0 and
+    // perform index tests
+    // on attributes of type int
     std::cout << "--------------------" << std::endl;
     std::cout << "createRelationNegative" << std::endl;
     createRelationNegative();
@@ -212,7 +221,7 @@ void test4() {
 
 void test5() {
     // Create a relation with tuples valued 0 to relationSize in random order and perform index tests
-    // on attributes of all three types (int, double, string)
+    // for corner cases on attributes of type int
     std::cout << "--------------------" << std::endl;
     std::cout << "createRelationRandomComplex" << std::endl;
     createRelationRandom();
@@ -221,8 +230,9 @@ void test5() {
 }
 
 void test6() {
-    // Create a relation with tuples valued 0 to relationSize in random order and perform index tests
-    // on attributes of all three types (int, double, string)
+    // Create a relation with 750000 records, in random order and perform index tests
+    // on attributes of type int. Large number of records ensure height of created Btree index is more than 2,
+    // ensured root node splits, and is handled correctly.
     std::cout << "--------------------" << std::endl;
     std::cout << "createRelationRandomBig" << std::endl;
     createRelationRandomBig();
@@ -231,8 +241,9 @@ void test6() {
 }
 
 void test7() {
-    // Create a relation with tuples valued 0 to relationSize in random order and perform index tests
-    // on attributes of all three types (int, double, string)
+    // Create a relation with tuples valued 0 to relationSize, such that all tuples have only even integers, valued
+    // from 0 to relationSize
+    // Performs index tests for attributes of types int
     std::cout << "--------------------" << std::endl;
     std::cout << "createRelationForwardEven" << std::endl;
     createRelationForwardEven();
@@ -241,8 +252,9 @@ void test7() {
 }
 
 void test8() {
-    // Create a relation with tuples valued 0 to relationSize in random order and perform index tests
-    // on attributes of all three types (int, double, string)
+    // Create a relation with 750000 records, valued 0 to relationSizeBig and perform index tests
+    // on attributes of type int. Large number of records ensure height of created Btree index is more than 2,
+    // ensured root node splits, and is handled correctly.
     std::cout << "--------------------" << std::endl;
     std::cout << "createRelationForwardBig" << std::endl;
     createRelationForwardBig();
@@ -250,6 +262,17 @@ void test8() {
     deleteRelation();
 }
 
+void test9() {
+    // Create a relation with tuples valued 0 to relationSize and perform index tests
+    // on attributes of type int. Ensures if index  file is present, it is not created again, and reused.
+    std::cout << "---------------------" << std::endl;
+    std::cout << "createRelationForward" << std::endl;
+    createRelationForward();
+    indexExistsTest();
+    indexExistsTest();
+    indexTests();
+    deleteRelation();
+}
 // -----------------------------------------------------------------------------
 // createRelationForward
 // -----------------------------------------------------------------------------
@@ -588,7 +611,7 @@ void indexTests() {
 }
 
 // -----------------------------------------------------------------------------
-// indexTests
+// indexTestsEven
 // -----------------------------------------------------------------------------
 
 void indexTestsEven() {
@@ -646,7 +669,11 @@ void indexTestsComplex() {
         }
     }
 }
-
+void indexExistsTest() {
+    if (testNum == 1) {
+        intTests();
+    }
+}
 // -----------------------------------------------------------------------------
 // intTests
 // -----------------------------------------------------------------------------
@@ -916,6 +943,7 @@ void errorTests() {
     }
 
     deleteRelation();
+    //Remove index file
 }
 
 void deleteRelation() {
